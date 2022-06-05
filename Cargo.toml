@@ -1,0 +1,16 @@
+[workspace]
+
+members = [
+    "structs",
+    "minigrep",
+    "fitbits",
+    "smart_pointers",
+    "concurrency",
+    "rust_oo",
+    "blog",
+    "miniexcel",
+    "eq_resistance",
+    "assembly_line",
+    "enums",
+    "exercism",
+]
