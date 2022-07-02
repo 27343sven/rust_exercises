@@ -22,6 +22,7 @@ mod space_age;
 mod sublist;
 mod sum_of_sqr;
 mod prime_factors;
+mod proverb;
 
 fn main() {
     let mut f = forth_two::Forth::new();
