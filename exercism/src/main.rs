@@ -1,3 +1,5 @@
+
+#[allow(unused)]
 mod anagram;
 mod clock;
 mod fibonacci;
@@ -19,6 +21,7 @@ mod rpn_calc;
 mod space_age;
 mod sublist;
 mod sum_of_sqr;
+mod prime_factors;
 
 fn main() {
     let mut f = forth_two::Forth::new();
