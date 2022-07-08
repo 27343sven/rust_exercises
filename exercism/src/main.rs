@@ -25,6 +25,7 @@ mod prime_factors;
 mod proverb;
 mod raindrops;
 mod sum_of_multiples;
+mod high_scores;
 
 fn main() {
     let mut f = forth_two::Forth::new();
