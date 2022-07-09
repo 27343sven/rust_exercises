@@ -28,6 +28,7 @@ mod sum_of_multiples;
 mod high_scores;
 mod matching_brackets;
 mod acronym;
+mod all_your_bases;
 
 fn main() {
     let mut f = forth_two::Forth::new();
