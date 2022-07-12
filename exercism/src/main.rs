@@ -30,6 +30,7 @@ mod matching_brackets;
 mod acronym;
 mod all_your_bases;
 mod alergies;
+mod alphametic;
 
 fn main() {
     let mut f = forth_two::Forth::new();
