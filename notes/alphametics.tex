@@ -94,20 +94,30 @@ This alphametic results in the following equations
 We can construct a graph like structure to see what variables depend on each other:
 
 \begin{center}
-\begin{tikzpicture}[node distance={20mm}, thick, main/.style = {draw, circle}] 
+\begin{tikzpicture}[node distance={30mm}, thick, main/.style = {draw, circle}] 
     \node[main] (1)                    {T};
-    \node[main] (5) [above right of=1] {$c_1$};
-    \node[main] (2) [below right of=5] {U};
-    \node[main] (6) [above right of=2] {$c_2$};
-    \node[main] (3) [below right of=6] {O}; 
-    \node[main] (4) [below       of=2] {G};
-    \draw[->] (1) to [out=135,in=90,looseness=1.5] (3);
-    \draw[->] (2) -- (1);
-    \draw[->] (2) -- (4);
-    \draw[->] (2) -- (5);
-    \draw[->] (3) -- (6);
-    \draw[->] (5) -- (1);
-    \draw[->] (6) -- (2);
+    \node[main] (2) [below       of=1] {U};
+    \node[main] (3) [below       of=2] {O}; 
+    \node[main] (4) [      right of=1] {G};
+    
+    \node[main] (5) [      right of=2] {$c_1$};
+    \node[main] (6) [      right of=5] {$c_2$};
+    
+    \begin{scope}[
+        every node/.style={fill=white,circle}
+    ]
+              
+    \path[->] (1) edge[bend right=60] node {$2$} (3);
+    \path[->] (2) edge                node {$1$} (1);
+    \path[->] (2) edge                node {$1$} (4);
+    \draw[->] (2) edge                node {$1$} (5);
+    \draw[->] (3) edge[bend right=60] node {$1$} (6);
+    \draw[->] (5) edge                node {$2$} (3);
+    \draw[->] (6) edge[bend right=60] node {$1$} (1);
+    \draw[->] (6) edge                node {$1$} (4);
+    \draw[->] (6) edge                node {$1$} (5);
+    
+    \end{scope}
 \end{tikzpicture} 
 \end{center}
 

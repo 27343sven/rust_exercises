@@ -277,9 +277,6 @@ impl PartialEq for Hand {
         self.hand_type == other.hand_type
     }
 
-    fn ne(&self, other: &Self) -> bool {
-        self.hand_type != other.hand_type
-    }
 }
 
 impl PartialOrd for Hand {
