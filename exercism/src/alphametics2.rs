@@ -17,7 +17,7 @@ pub enum NodeType {
     Overflow,
     Variable,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum GraphError {
     NodeInBacktraceButNoValue,
     NoValue,
@@ -28,6 +28,7 @@ pub enum GraphError {
     NoRoot,
     CalcValueUnavailable(u32),
     TakesPrecidence(u32),
+    ForcedIncreaseOfUnavailableNode,
 }
 
 #[derive(Clone, Debug)]
@@ -74,11 +75,11 @@ where
     NId: Eq + Hash + Copy + Clone + Display + Debug,
 {
     pub fn solve(&mut self, id: NId) -> Result<u32, GraphError> {
-        let mut visited = HashSet::new();
-        let mut backtrace = HashSet::new();
+        let mut to_solve = HashSet::new();
+        let mut solved = HashSet::new();
         let mut force_change = false;
 
-        let res = self.solve_node(id, &mut visited, &mut backtrace, &mut force_change, id);
+        let res = self.solve_node(id, &mut to_solve, &mut solved, &mut force_change, id);
         match res {
             Err(err) => {
                 println!("[!] {:?}", err);
@@ -91,52 +92,85 @@ where
     fn solve_node(
         &mut self,
         id: NId,
-        visited: &mut HashSet<NId>,
-        backtrace: &mut HashSet<NId>,
+        to_solve: &mut HashSet<NId>,
+        solved: &mut HashSet<NId>,
         force_change: &mut bool,
         root: NId,
     ) -> Result<u32, GraphError> {
-        println!("[{:<3}] Solving {}", id, id);
+        println!(
+            "[{:<3}] Solving {}; solved: {:?}; to_solve: {:?}",
+            id, id, solved, to_solve
+        );
         thread::sleep(time::Duration::from_millis(100));
         let mut node = self.nodes.get(&id).cloned().unwrap();
         let default = Vec::new();
         let edges = self.edges.get(&id).unwrap_or(&default);
-        let res = if visited.contains(&id) || edges.is_empty() {
+        let res = if to_solve.contains(&id) || edges.is_empty() {
+            // if this node is already in visited or is a dead
             let (value_free, is_in_range, _) =
-                self.test_value(node.v, &node, visited, root, Some(id))?;
-            if value_free && is_in_range {
-                if *force_change {
+                self.test_value(node.v, &node, to_solve, root, Some(id))?;
+
+            match (
+                value_free,
+                is_in_range,
+                force_change.clone(),
+                solved.contains(&id),
+            ) {
+                // value is correct and forced to change, but node has dependencies elsewere
+                (true, true, true, true) => {
                     println!(
-                        "[{:<3}] Existing value works, but increase change for {}",
+                        "[{:<3}] Cannot increase node {} as it was already solved for other nodes.",
                         id, id
                     );
+                    return Err(GraphError::ForcedIncreaseOfUnavailableNode);
+                }
+                // value correct but forced to change
+                (true, true, true, _) => {
                     *force_change = false;
-                } else {
+                    println!(
+                        "[{:<3}] Existing value works, but forcing increase {}",
+                        id, id
+                    );
+                }
+                // value is already correct
+                (true, true, _, _) => {
+                    solved.insert(id);
                     println!(
                         "[{:<3}] {} = {:?} already works, continuing...",
                         id,
                         id,
                         node.v.unwrap()
                     );
-                    backtrace.insert(id);
                     return Ok(node.v.ok_or(GraphError::NoValue)?);
                 }
+                _ => {}
             }
-            self.guess_node(visited, backtrace, id, node.v, root)
+
+            // if value_free && is_in_range {
+            //     if *force_change {
+            //         *force_change = false;
+            //         println!(
+            //             "[{:<3}] Existing value works, but forcing increase {}",
+            //             id, id
+            //         );
+            //     } else {
+            //     }
+            // }
+            self.guess_node(to_solve, solved, id, node.v, root)
         } else {
             if *force_change {
-                if let Some(node) = self.nodes.get_mut(&id){
+                if let Some(node) = self.nodes.get_mut(&id) {
                     println!("[{:<3}] Clearing node {} due to force change", id, id);
                     node.v = None;
                 }
             }
-            self.calc_node(id, visited, backtrace, force_change, root)
+            self.calc_node(id, to_solve, solved, force_change, root)
         };
         return match res {
             Ok(n) | Err(GraphError::TakesPrecidence(n)) => {
                 node.v = Some(n);
                 self.nodes.insert(id, node);
-                backtrace.insert(id);
+                solved.insert(id);
                 for (id, test_node) in self.nodes.iter() {
                     println!("\t{:5}: {:?}", id, test_node.v);
                 }
@@ -145,21 +179,21 @@ where
             Err(GraphError::CalcValueUnavailable(n)) => {
                 println!(
                     "[{:<3}] Calculated value {} = '{:?}' is not available, forcing change... {:?}, {:?}",
-                    id, id, n, backtrace, visited
+                    id, id, n, solved, to_solve
                 );
                 *force_change = true;
-                backtrace.clear();
-                self.solve_node(id, visited, backtrace, force_change, root)
+                // solved.clear();
+                self.solve_node(id, to_solve, solved, force_change, root)
             }
             Err(_) => res,
         };
     }
 
-    fn clear_backtrace_values(&mut self, id: NId, root: NId, backtrace: &HashSet<NId>) {
+    fn clear_solved_values(&mut self, id: NId, root: NId, solved: &HashSet<NId>) {
         for (conn_id, m_node) in self
             .nodes
             .iter_mut()
-            .filter(|(&n_id, _)| backtrace.contains(&n_id))
+            .filter(|(&n_id, _)| solved.contains(&n_id))
         {
             println!("[{:<3}]\t Clearing node '{}'.", id, conn_id);
             m_node.v = None;
@@ -168,8 +202,8 @@ where
 
     fn guess_node(
         &mut self,
-        visited: &HashSet<NId>,
-        backtrace: &HashSet<NId>,
+        to_solve: &HashSet<NId>,
+        solved: &HashSet<NId>,
         id: NId,
         n: Option<u32>,
         root: NId,
@@ -193,7 +227,7 @@ where
                 first = false;
             }
             let (mut value_free, is_in_range, takes_precidence) =
-                self.test_value(n, &node, &visited, root, Some(id))?;
+                self.test_value(n, &node, &to_solve, root, Some(id))?;
 
             // if value is not free but this node takes priority over the others clear the other nodes
 
@@ -213,7 +247,7 @@ where
                     "[{:<3}] Clearing values (Value '{:?}' not free but node takes precidence)...",
                     id, n
                 );
-                self.clear_backtrace_values(id, root, backtrace);
+                self.clear_solved_values(id, root, solved);
                 value_free = true;
             }
             if !is_in_range || !value_free {
@@ -247,40 +281,40 @@ where
     fn calc_node(
         &mut self,
         id: NId,
-        visited: &mut HashSet<NId>,
-        backtrace: &mut HashSet<NId>,
+        to_solve: &mut HashSet<NId>,
+        solved: &mut HashSet<NId>,
         force_change: &mut bool,
         root: NId,
     ) -> Result<u32, GraphError> {
         let node = self.nodes.get(&id).cloned().unwrap();
         let edges = self.edges.get(&id).cloned().unwrap_or(Vec::new());
-        visited.insert(id);
+        to_solve.insert(id);
 
         let mut v: u32;
         let mut results: Vec<u32> = Vec::new();
         let mut found: HashSet<u32> = HashSet::new();
 
         return 'outer: loop {
-            // loop over all edges outward edges
+            // loop over all outgoing edges
             for (i, (n_id, e)) in edges.iter().enumerate() {
                 // if backtrace already contains a connected node take it's value and multiply it by edge weight
                 // else call solve_node and multiply by edge weight
-                let res = if backtrace.contains(n_id) && !*force_change {
+                let res = if solved.contains(n_id) && !*force_change {
                     self.nodes
                         .get(n_id)
                         .and_then(|n_node| n_node.v.and_then(|n| Some(e * n)))
                         .ok_or(GraphError::NodeInBacktraceButNoValue)
                 } else {
-                    self.solve_node(n_id.clone(), visited, backtrace, force_change, root)
+                    self.solve_node(n_id.clone(), to_solve, solved, force_change, root)
                         .and_then(|n| Ok(n * e))
 
                     // Some(self.solve_node(n_id.clone(), visited, backtrace, root)? * e)
                 };
 
                 // if the node couldn't be solved clear the backtrace
-                if let Err(GraphError::TakesPrecidence(n)) = res {
+                if let Err(GraphError::TakesPrecidence(_)) = res {
                     println!("[{:<3}] Clearing backtrace...", id);
-                    backtrace.clear();
+                    solved.clear();
                     continue 'outer;
                 }
 
@@ -302,7 +336,7 @@ where
             };
 
             let (value_free, is_in_range, takes_precidence) =
-                self.test_value(Some(v), &node, visited, root, None)?;
+                self.test_value(Some(v), &node, to_solve, root, None)?;
 
             println!(
                 "[{:<3}] calc: {} = {}; [{}, {}] {:?}; is_free: {:5}; in_range {:5}; precidence: {:5}; {:?}...",
@@ -315,13 +349,13 @@ where
                 value_free,
                 is_in_range,
                 takes_precidence,
-                visited,
+                to_solve,
             );
             for (id, test_node) in self.nodes.iter() {
                 println!("\t{:5}: {:?}", id, test_node.v);
             }
 
-            visited.remove(&id);
+            to_solve.remove(&id);
 
             break 'outer match (
                 value_free,
@@ -331,7 +365,7 @@ where
             ) {
                 (_, true, _, true) => {
                     println!("[{:<3}] {} all posibilities tested; {:?}", id, id, found);
-                    visited.remove(&id);
+                    to_solve.remove(&id);
                     Ok(v)
                 }
                 // (_, false, _, _) => {
@@ -342,10 +376,12 @@ where
                 // }
                 (false, true, true, _) => {
                     println!( "[{:<3}] Clearing values (Value '{:?}' not free but node takes precidence)...", id, v);
-                    self.clear_backtrace_values(id, root, backtrace);
+                    self.clear_solved_values(id, root, solved);
                     Err(GraphError::TakesPrecidence(v))
                 }
-                (false, true, false, _) | (_, false, _, _) => Err(GraphError::CalcValueUnavailable(v)),
+                (false, true, false, _) | (_, false, _, _) => {
+                    Err(GraphError::CalcValueUnavailable(v))
+                }
                 _ => {
                     println!("[{:<3}] {} = {} found!", id, id, v);
                     Ok(v)
@@ -361,7 +397,7 @@ where
         &self,
         n: Option<u32>,
         node: &Node,
-        visited: &HashSet<NId>,
+        to_solve: &HashSet<NId>,
         root: NId,
         exclude: Option<NId>,
     ) -> Result<(bool, bool, bool), GraphError> {
@@ -373,11 +409,7 @@ where
                 &root,
                 self.nodes.get(&root).ok_or(GraphError::NoRoot)?,
             )))
-            .filter(|(&id, _)| {
-                exclude
-                    .and_then(|exclude_id| Some(id != exclude_id))
-                    .unwrap_or(true)
-            })
+            .filter(|(&id, _)| exclude.map(|exclude_id| id != exclude_id).unwrap_or(true))
             .any(|(_, node)| node.v == n);
         // println!("value_free: {}", value_free);
 
@@ -392,7 +424,7 @@ where
         let takes_precidence = is_in_range
             && !value_free
             // && node.t == NodeType::Variable
-            && visited
+            && to_solve
                 .iter()
                 .filter(|id| **id != root)
                 .all(|id| self.nodes.get(id).unwrap().v != n);
@@ -422,10 +454,8 @@ where
 }
 
 mod tests {
-    use std::ops::{Range, RangeBounds};
 
     use super::*;
-
     #[test]
     fn to_go_out() {
         let test = 1..=9;
@@ -489,6 +519,6 @@ mod tests {
         graph.add_edge("c2", "T", 1);
         graph.add_edge("c2", "c1", 1);
 
-        graph.solve("O");
+        assert_eq!(graph.solve("O"), Ok(1));
     }
 }
